@@ -1,6 +1,5 @@
-import startRepl from "./repl/repl";
+import { startRepl } from "./repl/repl";
 
-startRepl((input) => {
+startRepl((input: string) => {
   console.log("You typed:", input);
 });
-  

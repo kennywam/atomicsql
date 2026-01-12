@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 
-export default function startRepl(onCommand: (input: string) => void) {
+export function startRepl(onCommand: (input: string) => void) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
