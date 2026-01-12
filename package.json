@@ -1,0 +1,28 @@
+{
+  "name": "atomicsql",
+  "version": "1.0.0",
+  "description": "a simple RDBMS",
+  "keywords": [
+    "simple rdbms",
+    "rdbms",
+    "typescript"
+  ],
+  "license": "ISC",
+  "author": "Kennedy Wambua",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "packageManager": "pnpm@10.13.1",
+  "devDependencies": {
+    "@types/node": "^25.0.6",
+    "typescript": "^5.9.3"
+  }
+}
