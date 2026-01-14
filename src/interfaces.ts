@@ -35,7 +35,16 @@ export interface SelectStatement {
   type: 'SELECT'
   columns: string[]
   tableName: string
+  joinClause?: JoinClause
   whereClause?: WhereClause
+}
+
+export interface JoinClause {
+  type: 'INNER'
+  leftTable: string
+  rightTable: string
+  leftColumn: string
+  rightColumn: string
 }
 
 export interface CreateDatabaseStatement {
