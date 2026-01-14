@@ -1,3 +1,5 @@
+import { HashIndex } from './index/hash-index'
+
 export type DataType = 'INT' | 'TEXT'
 
 export interface Column {
@@ -13,5 +15,5 @@ export interface Table {
   name: string
   columns: Column[]
   rows: Row[]
-  indexes: Map<string, Map<any, number[]>>
+  indexes: Map<string, HashIndex>
 }
