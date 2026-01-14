@@ -71,3 +71,15 @@ export interface WhereClause {
   operator: '=' | '!=' | '>' | '<' | '>=' | '<='
   value: any
 }
+
+export interface CreateIndexStatement {
+  type: 'CREATE_INDEX'
+  indexName: string
+  tableName: string
+  columnName: string
+}
+
+export interface DropIndexStatement {
+  type: 'DROP_INDEX'
+  indexName: string
+}
