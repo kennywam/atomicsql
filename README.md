@@ -8,6 +8,7 @@ A simple RDBMS implementation in TypeScript with hash-based indexing support.
 - **Table Management**: CREATE, DROP, SHOW tables with column constraints
 - **Data Operations**: INSERT, UPDATE, DELETE, SELECT with WHERE clauses
 - **Hash Indexes**: Simple hash indexes for fast equality lookups
+- **INNER JOINs**: Basic nested-loop join implementation
 - **Data Types**: INT and TEXT data types with PRIMARY KEY and UNIQUE constraints
 
 ## Indexes
@@ -47,6 +48,56 @@ SELECT * FROM employees WHERE email = 'john@company.com';
 SELECT * FROM employees WHERE name = 'John Doe';
 SELECT * FROM employees WHERE age > 25;
 ```
+
+## JOINs
+
+AtomicSQL supports basic INNER JOIN operations using nested-loop join:
+
+**Joins are implemented using a nested-loop join, prioritizing correctness and clarity over performance.**
+
+### Supported JOIN Syntax
+
+```sql
+SELECT employees.name, departments.name
+FROM employees
+JOIN departments ON employees.dept_id = departments.id;
+```
+
+### JOIN Features
+
+- **INNER JOIN Only**: Only inner joins are supported
+- **Nested Loop Algorithm**: Simple O(n×m) nested loop implementation
+- **Table-Qualified Columns**: Use `table.column` notation for disambiguation
+- **WHERE Support**: JOINs can be combined with WHERE clauses
+- **Virtual Result Set**: Joined rows are not stored, only returned as results
+
+### JOIN Examples
+
+```sql
+-- Basic JOIN with specific columns
+SELECT employees.name, departments.name
+FROM employees
+JOIN departments ON employees.dept_id = departments.id;
+
+-- JOIN with all columns
+SELECT *
+FROM employees
+JOIN departments ON employees.dept_id = departments.id;
+
+-- JOIN with WHERE clause
+SELECT employees.name, departments.location
+FROM employees
+JOIN departments ON employees.dept_id = departments.id
+WHERE departments.name = 'Engineering';
+```
+
+### Limitations
+
+- No table aliases
+- No multiple JOINs in single query
+- No OUTER JOINs
+- No self-joins
+- No JOIN conditions other than equality
 
 ## Setup
 
