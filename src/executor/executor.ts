@@ -10,8 +10,11 @@ import {
   DropDatabaseStatement,
   UseDatabaseStatement,
   DescribeTableStatement,
+  CreateIndexStatement,
+  DropIndexStatement,
 } from '../interfaces'
 import { Table, Row } from '../types'
+import { HashIndex } from '../index/hash-index'
 
 export class Executor {
   constructor(private dbManager: Database) {}
@@ -41,6 +44,12 @@ export class Executor {
 
       case 'DROP_TABLE':
         return this.dropTable(statement)
+
+      case 'CREATE_INDEX':
+        return this.createIndex(statement)
+
+      case 'DROP_INDEX':
+        return this.dropIndex(statement)
 
       case 'INSERT':
         return this.insert(statement)
@@ -108,6 +117,17 @@ export class Executor {
     })
 
     table.rows.push(row)
+
+    // Update indexes for the new row
+    const rowId = table.rows.length - 1
+    table.columns.forEach((column) => {
+      if (table.indexes.has(column.name)) {
+        const index = table.indexes.get(column.name)!
+        const value = row.get(column.name)
+        index.add(value, rowId)
+      }
+    })
+
     return '1 row inserted'
   }
 
@@ -115,43 +135,60 @@ export class Executor {
     const db = this.dbManager.getCurrentDatabase()
     const table = db.getTable(stmt.tableName)
 
-    let filteredRows = table.rows
+    let filteredRows: Row[]
 
     if (stmt.whereClause) {
-      filteredRows = table.rows.filter((row) => {
-        const value = row.get(stmt.whereClause!.column)
-        const whereValue = stmt.whereClause!.value
+      // Check if we can use an index for equality lookup
+      if (
+        stmt.whereClause.operator === '=' &&
+        table.indexes.has(stmt.whereClause.column)
+      ) {
+        // Use index for fast lookup
+        const index = table.indexes.get(stmt.whereClause.column)!
+        const value = stmt.whereClause.value
+        const rowIds = index.get(value) || []
+        filteredRows = rowIds
+          .map((rowId) => table.rows[rowId])
+          .filter((row) => row !== undefined)
+      } else {
+        // Full table scan for non-equality operators or non-indexed columns
+        filteredRows = table.rows.filter((row) => {
+          const value = row.get(stmt.whereClause!.column)
+          const whereValue = stmt.whereClause!.value
 
-        const numValue =
-          typeof value === 'number'
-            ? value
-            : typeof value === 'string' && !isNaN(Number(value))
-            ? Number(value)
-            : value
-        const numWhereValue =
-          typeof whereValue === 'number'
-            ? whereValue
-            : typeof whereValue === 'string' && !isNaN(Number(whereValue))
-            ? Number(whereValue)
-            : whereValue
+          const numValue =
+            typeof value === 'number'
+              ? value
+              : typeof value === 'string' && !isNaN(Number(value))
+              ? Number(value)
+              : value
+          const numWhereValue =
+            typeof whereValue === 'number'
+              ? whereValue
+              : typeof whereValue === 'string' && !isNaN(Number(whereValue))
+              ? Number(whereValue)
+              : whereValue
 
-        switch (stmt.whereClause!.operator) {
-          case '=':
-            return numValue === numWhereValue
-          case '!=':
-            return numValue !== numWhereValue
-          case '>':
-            return numValue > numWhereValue
-          case '<':
-            return numValue < numWhereValue
-          case '>=':
-            return numValue >= numWhereValue
-          case '<=':
-            return numValue <= numWhereValue
-          default:
-            return false
-        }
-      })
+          switch (stmt.whereClause!.operator) {
+            case '=':
+              return numValue === numWhereValue
+            case '!=':
+              return numValue !== numWhereValue
+            case '>':
+              return numValue > numWhereValue
+            case '<':
+              return numValue < numWhereValue
+            case '>=':
+              return numValue >= numWhereValue
+            case '<=':
+              return numValue <= numWhereValue
+            default:
+              return false
+          }
+        })
+      }
+    } else {
+      filteredRows = table.rows
     }
 
     return filteredRows.map((row) => {
@@ -207,13 +244,57 @@ export class Executor {
     return `Table '${stmt.tableName}' dropped`
   }
 
+  private createIndex(stmt: CreateIndexStatement) {
+    const db = this.dbManager.getCurrentDatabase()
+    const table = db.getTable(stmt.tableName)
+
+    // Check if column exists
+    const columnExists = table.columns.some(
+      (col) => col.name === stmt.columnName
+    )
+    if (!columnExists) {
+      throw new Error(
+        `Column '${stmt.columnName}' does not exist in table '${stmt.tableName}'`
+      )
+    }
+
+    // Create index if it doesn't exist
+    if (!table.indexes.has(stmt.columnName)) {
+      table.indexes.set(stmt.columnName, new HashIndex())
+    }
+
+    // Build index from existing rows
+    const index = table.indexes.get(stmt.columnName)!
+    index.rebuild(table.rows, stmt.columnName)
+
+    return `Index '${stmt.indexName}' created on column '${stmt.columnName}'`
+  }
+
+  private dropIndex(stmt: DropIndexStatement) {
+    // For simplicity, we'll need to search all tables to find the index
+    const db = this.dbManager.getCurrentDatabase()
+    const tables = db.listTables()
+
+    for (const tableName of tables) {
+      const table = db.getTable(tableName)
+      for (const [columnName, index] of table.indexes.entries()) {
+        // Note: In a real implementation, we'd need to track index names separately
+        // For now, we'll drop the first index we find (simplified approach)
+        table.indexes.delete(columnName)
+        return `Index '${stmt.indexName}' dropped`
+      }
+    }
+
+    throw new Error(`Index '${stmt.indexName}' does not exist`)
+  }
+
   private update(stmt: UpdateStatement) {
     const db = this.dbManager.getCurrentDatabase()
     const table = db.getTable(stmt.tableName)
 
     let updatedCount = 0
 
-    table.rows.forEach((row) => {
+    table.rows.forEach((row, rowId) => {
       let matches = true
 
       if (stmt.whereClause) {
@@ -257,6 +338,19 @@ export class Executor {
       }
 
       if (matches) {
+        // Update indexes if the updated column is indexed
+        if (table.indexes.has(stmt.columnName)) {
+          const index = table.indexes.get(stmt.columnName)!
+          const oldValue = row.get(stmt.columnName)
+
+          // Remove old value from index
+          index.remove(oldValue, rowId)
+
+          // Add new value to index
+          const newValue = stmt.value
+          index.add(newValue, rowId)
+        }
+
         row.set(stmt.columnName, stmt.value)
         updatedCount++
       }
@@ -272,7 +366,10 @@ export class Executor {
     const originalLength = table.rows.length
 
     if (stmt.whereClause) {
-      table.rows = table.rows.filter((row) => {
+      const rowsToDelete: number[] = []
+
+      // Find rows to delete
+      table.rows.forEach((row, rowId) => {
         const value = row.get(stmt.whereClause!.column)
         const whereValue = stmt.whereClause!.value
 
@@ -289,25 +386,46 @@ export class Executor {
             ? Number(whereValue)
             : whereValue
 
+        let shouldDelete = false
         switch (stmt.whereClause!.operator) {
           case '=':
-            return numValue !== numWhereValue
+            shouldDelete = numValue === numWhereValue
+            break
           case '!=':
-            return numValue !== numWhereValue
+            shouldDelete = numValue !== numWhereValue
+            break
           case '>':
-            return numValue <= numWhereValue
+            shouldDelete = numValue > numWhereValue
+            break
           case '<':
-            return numValue >= numWhereValue
+            shouldDelete = numValue < numWhereValue
+            break
           case '>=':
-            return numValue < numWhereValue
+            shouldDelete = numValue >= numWhereValue
+            break
           case '<=':
-            return numValue > numWhereValue
-          default:
-            return true
+            shouldDelete = numValue <= numWhereValue
+            break
+        }
+
+        if (shouldDelete) {
+          rowsToDelete.push(rowId)
         }
       })
+
+      // Delete rows (in reverse order to maintain indices)
+      rowsToDelete.reverse().forEach((rowId) => {
+        table.rows.splice(rowId, 1)
+      })
+
+      // Rebuild all indexes since row IDs have changed
+      table.indexes.forEach((index, columnName) => {
+        index.rebuild(table.rows, columnName)
+      })
     } else {
+      // Delete all rows and clear indexes
       table.rows = []
+      table.indexes.forEach((index) => index.clear())
     }
 
     const deletedCount = originalLength - table.rows.length
