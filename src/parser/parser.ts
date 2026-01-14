@@ -11,6 +11,8 @@ import {
   ListDatabasesStatement,
   ShowTablesStatement,
   DescribeTableStatement,
+  CreateIndexStatement,
+  DropIndexStatement,
 } from '../interfaces'
 import { Column, DataType } from '../types'
 
@@ -64,6 +66,8 @@ export function parse(
   | ListDatabasesStatement
   | ShowTablesStatement
   | DescribeTableStatement
+  | CreateIndexStatement
+  | DropIndexStatement
   | null {
   const createDbRegex = /^CREATE\s+DATABASE\s+(\w+);?$/i
   const dropDbRegex = /^DROP\s+DATABASE\s+(\w+);?$/i
@@ -73,6 +77,9 @@ export function parse(
   const describeTableRegex = /^DESCRIBE\s+(\w+);?$/i
   const createTableRegex = /^CREATE\s+TABLE\s+(\w+)\s*\((.+)\);?$/i
   const dropTableRegex = /^DROP\s+TABLE\s+(\w+);?$/i
+  const createIndexRegex =
+    /^CREATE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\(([^)]+)\);?$/i
+  const dropIndexRegex = /^DROP\s+INDEX\s+(\w+);?$/i
   const insertRegex = /^INSERT\s+INTO\s+(\w+)\s+VALUES\s*\((.+)\);?$/i
   const updateRegex =
     /^UPDATE\s+(\w+)\s+SET\s+(\w+)\s*=\s*(.+?)(?:\s+WHERE\s+(.+))?;?$/i
@@ -130,6 +137,24 @@ export function parse(
     return {
       type: 'DROP_TABLE',
       tableName: match[1],
+    }
+  }
+
+  match = input.match(createIndexRegex)
+  if (match && match[1] && match[2] && match[3]) {
+    return {
+      type: 'CREATE_INDEX',
+      indexName: match[1],
+      tableName: match[2],
+      columnName: match[3].trim(),
+    }
+  }
+
+  match = input.match(dropIndexRegex)
+  if (match && match[1]) {
+    return {
+      type: 'DROP_INDEX',
+      indexName: match[1],
     }
   }
 
