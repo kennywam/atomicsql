@@ -84,7 +84,8 @@ export function parse(
   const updateRegex =
     /^UPDATE\s+(\w+)\s+SET\s+(\w+)\s*=\s*(.+?)(?:\s+WHERE\s+(.+))?;?$/i
   const deleteRegex = /^DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+))?;?$/i
-  const selectRegex = /^SELECT\s+(.+)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+))?;?$/i
+  const selectRegex =
+    /^SELECT\s+(.+)\s+FROM\s+(\w+)(?:\s+JOIN\s+(\w+)\s+ON\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+))?(?:\s+WHERE\s+(.+))?;?$/i
 
   let match = input.match(createDbRegex)
   if (match && match[1]) {
@@ -182,11 +183,24 @@ export function parse(
 
   match = input.match(selectRegex)
   if (match && match[1] && match[2]) {
-    const whereClause = match[3] ? parseWhereClause(match[3]) : undefined
+    const whereClause = match[8] ? parseWhereClause(match[8]) : undefined
+
+    let joinClause: any = undefined
+    if (match[3] && match[4] && match[5] && match[6] && match[7]) {
+      joinClause = {
+        type: 'INNER',
+        leftTable: match[2],
+        rightTable: match[3],
+        leftColumn: match[5],
+        rightColumn: match[7],
+      }
+    }
+
     return {
       type: 'SELECT',
       columns: match[1].split(',').map((col) => col.trim()),
       tableName: match[2],
+      joinClause,
       whereClause,
     }
   }
