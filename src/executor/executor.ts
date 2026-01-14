@@ -133,6 +133,13 @@ export class Executor {
 
   private select(stmt: SelectStatement) {
     const db = this.dbManager.getCurrentDatabase()
+
+    // Handle JOIN case
+    if (stmt.joinClause) {
+      return this.selectWithJoin(stmt, db)
+    }
+
+    // Handle single table case
     const table = db.getTable(stmt.tableName)
 
     let filteredRows: Row[]
@@ -206,6 +213,114 @@ export class Executor {
       }
       return result
     })
+  }
+
+  private selectWithJoin(stmt: SelectStatement, db: Database) {
+    const leftTable = db.getTable(stmt.joinClause!.leftTable)
+    const rightTable = db.getTable(stmt.joinClause!.rightTable)
+
+    const results: any[] = []
+
+    // Nested Loop Join Algorithm
+    for (const leftRow of leftTable.rows) {
+      for (const rightRow of rightTable.rows) {
+        const leftValue = leftRow.get(stmt.joinClause!.leftColumn)
+        const rightValue = rightRow.get(stmt.joinClause!.rightColumn)
+
+        // Check join condition
+        if (leftValue === rightValue) {
+          // Create joined row
+          const joinedRow: any = {}
+
+          // Handle column selection
+          if (stmt.columns.includes('*')) {
+            // Return all columns from both tables
+            leftTable.columns.forEach((column) => {
+              joinedRow[`${stmt.joinClause!.leftTable}.${column.name}`] =
+                leftRow.get(column.name)
+            })
+            rightTable.columns.forEach((column) => {
+              joinedRow[`${stmt.joinClause!.rightTable}.${column.name}`] =
+                rightRow.get(column.name)
+            })
+          } else {
+            // Return specific columns
+            stmt.columns.forEach((column) => {
+              if (column.includes('.')) {
+                const [tableName, columnName] = column.split('.')
+                if (tableName === stmt.joinClause!.leftTable) {
+                  joinedRow[column] = leftRow.get(columnName!)
+                } else if (tableName === stmt.joinClause!.rightTable) {
+                  joinedRow[column] = rightRow.get(columnName!)
+                }
+              } else {
+                // Column name without table prefix - check both tables
+                const leftValue = leftRow.get(column)
+                const rightValue = rightRow.get(column)
+                if (leftValue !== undefined) {
+                  joinedRow[column] = leftValue
+                } else if (rightValue !== undefined) {
+                  joinedRow[column] = rightValue
+                }
+              }
+            })
+          }
+
+          // Apply WHERE clause if present
+          if (stmt.whereClause) {
+            let matches = false
+            const whereValue = stmt.whereClause.value
+
+            // Check WHERE clause against joined row
+            for (const [key, value] of Object.entries(joinedRow)) {
+              const numValue =
+                typeof value === 'number'
+                  ? value
+                  : typeof value === 'string' && !isNaN(Number(value))
+                  ? Number(value)
+                  : value
+              const numWhereValue =
+                typeof whereValue === 'number'
+                  ? whereValue
+                  : typeof whereValue === 'string' && !isNaN(Number(whereValue))
+                  ? Number(whereValue)
+                  : whereValue
+
+              switch (stmt.whereClause.operator) {
+                case '=':
+                  matches = (numValue as any) === numWhereValue
+                  break
+                case '!=':
+                  matches = (numValue as any) !== numWhereValue
+                  break
+                case '>':
+                  matches = (numValue as any) > numWhereValue
+                  break
+                case '<':
+                  matches = (numValue as any) < numWhereValue
+                  break
+                case '>=':
+                  matches = (numValue as any) >= numWhereValue
+                  break
+                case '<=':
+                  matches = (numValue as any) <= numWhereValue
+                  break
+              }
+
+              if (matches) break
+            }
+
+            if (matches) {
+              results.push(joinedRow)
+            }
+          } else {
+            results.push(joinedRow)
+          }
+        }
+      }
+    }
+
+    return results
   }
 
   private createDatabase(stmt: CreateDatabaseStatement) {
