@@ -118,7 +118,6 @@ export class Executor {
 
     table.rows.push(row)
 
-    // Update indexes for the new row
     const rowId = table.rows.length - 1
     table.columns.forEach((column) => {
       if (table.indexes.has(column.name)) {
@@ -134,23 +133,19 @@ export class Executor {
   private select(stmt: SelectStatement) {
     const db = this.dbManager.getCurrentDatabase()
 
-    // Handle JOIN case
     if (stmt.joinClause) {
       return this.selectWithJoin(stmt, db)
     }
 
-    // Handle single table case
     const table = db.getTable(stmt.tableName)
 
     let filteredRows: Row[]
 
     if (stmt.whereClause) {
-      // Check if we can use an index for equality lookup
       if (
         stmt.whereClause.operator === '=' &&
         table.indexes.has(stmt.whereClause.column)
       ) {
-        // Use index for fast lookup
         const index = table.indexes.get(stmt.whereClause.column)!
         const value = stmt.whereClause.value
         const rowIds = index.get(value) || []
@@ -158,7 +153,6 @@ export class Executor {
           .map((rowId) => table.rows[rowId])
           .filter((row) => row !== undefined)
       } else {
-        // Full table scan for non-equality operators or non-indexed columns
         filteredRows = table.rows.filter((row) => {
           const value = row.get(stmt.whereClause!.column)
           const whereValue = stmt.whereClause!.value
@@ -201,12 +195,10 @@ export class Executor {
     return filteredRows.map((row) => {
       const result: any = {}
       if (stmt.columns.includes('*')) {
-        // Return all columns for SELECT *
         table.columns.forEach((column) => {
           result[column.name] = row.get(column.name)
         })
       } else {
-        // Return specific columns
         stmt.columns.forEach((column) => {
           result[column] = row.get(column)
         })
@@ -221,20 +213,15 @@ export class Executor {
 
     const results: any[] = []
 
-    // Nested Loop Join Algorithm
     for (const leftRow of leftTable.rows) {
       for (const rightRow of rightTable.rows) {
         const leftValue = leftRow.get(stmt.joinClause!.leftColumn)
         const rightValue = rightRow.get(stmt.joinClause!.rightColumn)
 
-        // Check join condition
         if (leftValue === rightValue) {
-          // Create joined row
           const joinedRow: any = {}
 
-          // Handle column selection
           if (stmt.columns.includes('*')) {
-            // Return all columns from both tables
             leftTable.columns.forEach((column) => {
               joinedRow[`${stmt.joinClause!.leftTable}.${column.name}`] =
                 leftRow.get(column.name)
@@ -244,7 +231,6 @@ export class Executor {
                 rightRow.get(column.name)
             })
           } else {
-            // Return specific columns
             stmt.columns.forEach((column) => {
               if (column.includes('.')) {
                 const [tableName, columnName] = column.split('.')
@@ -254,7 +240,6 @@ export class Executor {
                   joinedRow[column] = rightRow.get(columnName!)
                 }
               } else {
-                // Column name without table prefix - check both tables
                 const leftValue = leftRow.get(column)
                 const rightValue = rightRow.get(column)
                 if (leftValue !== undefined) {
@@ -266,12 +251,10 @@ export class Executor {
             })
           }
 
-          // Apply WHERE clause if present
           if (stmt.whereClause) {
             let matches = false
             const whereValue = stmt.whereClause.value
 
-            // Check WHERE clause against joined row
             for (const [key, value] of Object.entries(joinedRow)) {
               const numValue =
                 typeof value === 'number'
@@ -363,7 +346,6 @@ export class Executor {
     const db = this.dbManager.getCurrentDatabase()
     const table = db.getTable(stmt.tableName)
 
-    // Check if column exists
     const columnExists = table.columns.some(
       (col) => col.name === stmt.columnName
     )
@@ -373,12 +355,10 @@ export class Executor {
       )
     }
 
-    // Create index if it doesn't exist
     if (!table.indexes.has(stmt.columnName)) {
       table.indexes.set(stmt.columnName, new HashIndex())
     }
 
-    // Build index from existing rows
     const index = table.indexes.get(stmt.columnName)!
     index.rebuild(table.rows, stmt.columnName)
 
@@ -386,15 +366,12 @@ export class Executor {
   }
 
   private dropIndex(stmt: DropIndexStatement) {
-    // For simplicity, we'll need to search all tables to find the index
     const db = this.dbManager.getCurrentDatabase()
     const tables = db.listTables()
 
     for (const tableName of tables) {
       const table = db.getTable(tableName)
       for (const [columnName, index] of table.indexes.entries()) {
-        // Note: In a real implementation, we'd need to track index names separately
-        // For now, we'll drop the first index we find (simplified approach)
         table.indexes.delete(columnName)
         return `Index '${stmt.indexName}' dropped`
       }
@@ -416,7 +393,6 @@ export class Executor {
         const value = row.get(stmt.whereClause.column)
         const whereValue = stmt.whereClause.value
 
-        // Convert to numbers for comparison if both are numeric
         const numValue =
           typeof value === 'number'
             ? value
@@ -453,15 +429,12 @@ export class Executor {
       }
 
       if (matches) {
-        // Update indexes if the updated column is indexed
         if (table.indexes.has(stmt.columnName)) {
           const index = table.indexes.get(stmt.columnName)!
           const oldValue = row.get(stmt.columnName)
 
-          // Remove old value from index
           index.remove(oldValue, rowId)
 
-          // Add new value to index
           const newValue = stmt.value
           index.add(newValue, rowId)
         }
@@ -483,7 +456,6 @@ export class Executor {
     if (stmt.whereClause) {
       const rowsToDelete: number[] = []
 
-      // Find rows to delete
       table.rows.forEach((row, rowId) => {
         const value = row.get(stmt.whereClause!.column)
         const whereValue = stmt.whereClause!.value
@@ -528,17 +500,14 @@ export class Executor {
         }
       })
 
-      // Delete rows (in reverse order to maintain indices)
       rowsToDelete.reverse().forEach((rowId) => {
         table.rows.splice(rowId, 1)
       })
 
-      // Rebuild all indexes since row IDs have changed
       table.indexes.forEach((index, columnName) => {
         index.rebuild(table.rows, columnName)
       })
     } else {
-      // Delete all rows and clear indexes
       table.rows = []
       table.indexes.forEach((index) => index.clear())
     }
